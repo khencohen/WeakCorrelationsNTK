@@ -171,7 +171,8 @@ def run_ntk_training(dataset_size=64, hidden_size=128,
     list_of_epochs_ld = []
     list_of_lin_loss = []
     list_of_nn_lin_loss = []
-    C = lambda x, y: jnp.sqrt(jnp.mean((x - y) ** 2))
+    # C = lambda x, y: jnp.sqrt(jnp.mean((x - y) ** 2))
+    C = lambda x, y: jnp.abs(x - y).mean()
     for i in loop:
         params = get_params(state)
         state = opt_apply(i, grad_loss(params, X, Y), state)
@@ -180,8 +181,16 @@ def run_ntk_training(dataset_size=64, hidden_size=128,
             # exact_loss = loss(f(params, X), Y)
             # linear_loss = loss(predictions[i], Y)
 
-            exact_loss = loss(f(params, XT), YT)
-            linear_loss = loss(predictions_test[i], YT)
+            exact_output = f(params, X)
+            lin_output = predictions_test[i]
+            # exact_loss = loss(exact_output, YT)
+            # linear_loss = loss(predictions_test[i], YT)
+
+            # Calculate the output probabilities
+            exact_prob = jnp.exp(log_softmax(exact_output))
+            lin_prob = jnp.exp(log_softmax(lin_output))
+            exact_loss = jnp.mean(jnp.sum(exact_prob * YT, axis=1))
+            linear_loss = jnp.mean(jnp.sum(lin_prob * YT, axis=1))
 
             # quad_loss = loss(lin_plus_quad(X, params), Y)
             loop.set_description('Exact Loss: {:.4f}, Linear Loss: {:.4f}'.format(exact_loss, linear_loss))
@@ -230,7 +239,7 @@ def run_single_experiment():
 
     plt.subplot(1, 2, 2)
     plt.plot(list_of_epochs_ld, list_of_ld)
-    plt.title(r'$||F - F_{lin}||^2$')
+    plt.title(r'$C(F, F_{lin})$')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
 
@@ -266,7 +275,7 @@ def run_nol_experiment(list_of_nol):
 
     plt.figure()
     plt.plot(list_of_nol, list_of_final_C)
-    plt.title(r'$||F - F_{lin}||^2$ vs. Number of Layers')
+    plt.title(r'$C(F, F_{lin})$ vs. Number of Layers')
     plt.xlabel('Number of Layers')
     plt.ylabel('Loss')
     plt.show()
@@ -302,7 +311,7 @@ def run_activation_experiment(list_of_activations):
     plt.figure()
     # Show bars
     plt.bar(list_of_activations, list_of_final_C)
-    plt.title(r'$||F - F_{lin}||^2$ vs. Activation Function')
+    plt.title(r'$C(F, F_{lin})$ vs. Activation Function')
     plt.xlabel('Activation Function')
     plt.ylabel('Loss')
     plt.show()
@@ -338,7 +347,7 @@ def run_architecture_experiment(list_of_architectures):
     plt.figure()
     # Show bars
     plt.bar(list_of_architectures, list_of_final_C)
-    plt.title(r'$||F - F_{lin}||^2$ vs. Architecture')
+    plt.title(r'$C(F, F_{lin})$ vs. Architecture')
     plt.xlabel('Architecture')
     plt.ylabel('Loss')
     plt.show()
@@ -374,25 +383,65 @@ def run_dataset_experiment(list_of_datasets):
     plt.figure()
     # Show bars
     plt.bar(list_of_datasets, list_of_final_C)
-    plt.title(r'$||F - F_{lin}||^2$ vs. Dataset')
+    plt.title(r'$C(F, F_{lin})$ vs. Dataset')
     plt.xlabel('Dataset')
     plt.ylabel('Loss')
     plt.show()
 
 
+def run_width_experiment(list_of_widths):
+    learning_rate = 1e0  # Learning rate for the optimizer
+    num_of_epochs = 3000  # Number of epochs to train the network
+    dataset_size = 64  # Number of samples to use from the dataset
+    output_size = 10  # Number of classes
+    num_layers = 3  # Number of hidden layers
+    activation = 'relu'  # Activation function
+    architecture = 'Dense'  # Architecture of the network
+    dataset = 'MNIST'       # Dataset to use
+
+    list_of_final_C = []
+    for hidden_size in list_of_widths:
+        results = run_ntk_training(
+            dataset_size=dataset_size,
+            hidden_size=hidden_size,
+            output_size=output_size,
+            num_layers=num_layers,
+            activation=activation,
+            learning_rate=learning_rate,
+            num_of_epochs=num_of_epochs,
+            architecture=architecture,
+            dataset=dataset
+        )
+
+        list_of_ld, list_of_nn_lin_loss, list_of_lin_loss, list_of_epochs_ld = results
+        list_of_final_C.append(list_of_ld[-1])
+
+    plt.figure()
+    # Show bars
+    plt.plot(list_of_widths, list_of_final_C)
+    plt.title(r'$C(F, F_{lin})$ vs. Width')
+    plt.xlabel('Width')
+    plt.ylabel('Loss')
+    plt.show()
+
+
 if __name__ == '__main__':
-    # run_single_experiment()
+    run_single_experiment()
 
-    # run_nol_experiment(
-    #     list_of_nol=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    # )
+    run_nol_experiment(
+        list_of_nol=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    )
 
-    # run_activation_experiment(
-    #     list_of_activations=['relu', 'erf', 'sigmoid', 'gelu', 'leaky_relu']
-    # )
+    run_activation_experiment(
+        list_of_activations=['relu', 'erf', 'sigmoid', 'gelu', 'leaky_relu']
+    )
 
     run_dataset_experiment(
         list_of_datasets=['CIFAR10', 'FashionMNIST', 'MNIST']
+    )
+
+    run_width_experiment(
+        list_of_widths=[64, 128, 256, 512, 1024, 2048]
     )
 
     ### Warning! CNN Too slow for some reason: ##

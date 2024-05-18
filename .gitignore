@@ -12,3 +12,7 @@
 .idea
 old/*
 .DS_Store
+*.png
+data/*
+results/*
+venv/*

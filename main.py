@@ -456,7 +456,7 @@ if __name__ == '__main__':
 
     for dataset in ['CIFAR10']:  # , 'FashionMNIST', 'MNIST']:
         run_width_experiment(
-            list_of_widths=[32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192],
+            list_of_widths=[32, 48, 64, 80, 96, 112, 128, 144, 160, 176],
             dataset=dataset,
             dataset_size=int(512 / 0.8),
             num_of_epochs=5_000,

@@ -1,69 +1,44 @@
-# taylorized-training
+# Weak Correlations as the Underlying Principle for Linearization of Gradient-Based Learning Systems
 
-This repository contains code for training Taylorized neural networks from the paper
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[Taylorized Training: Towards Better Approximation of Neural Network Training at Finite Width](https://arxiv.org/abs/2002.04010) by Yu Bai, Ben Krause, Huan Wang, Caiming Xiong, and Richard Socher, 2020.
+## Overview
 
-## Introduction
-Taylorized training is to train the k-th order Taylor expansion of a neural network around its (random) initialization.
-
-An example use case of Taylorized training is as an empirical tool towards understanding the training dynamics of neural networks at finite width, in a way that extends the recently proposed theory of linearized training.
+Deep learning models, such as wide neural networks, can be conceptualized as nonlinear dynamical physical systems characterized by a multitude of interacting degrees of freedom. Such systems, in the limit of an infinite number of degrees of freedom, tend to exhibit simplified dynamics. This paper delves into gradient descent-based learning algorithms that display a linear structure in their parameter dynamics, reminiscent of the neural tangent kernel. We establish that this apparent linearity arises due to weak correlations between the first and higher-order derivatives of the hypothesis function with respect to the parameters taken around their initial values. This insight suggests that these weak correlations could be the underlying cause behind the observed linearization in such systems. As a case in point, we showcase this weak correlations structure within neural networks in the large width limit. Utilizing this relationship between linearity and weak correlations, we derive a bound on the deviation from linearity during the training trajectory of stochastic gradient descent. To facilitate our proof, we introduce a novel method to characterize the asymptotic behavior of random tensors. We empirically verify our findings and present a comparison between the linearization of the system and the observed correlations.
 
 
-## Prerequisites
-Requires Python >=3.6 and the following prerequisites.
-```
-# install tensorflow and tensorboard
-pip install tensorflow-gpu, tensorflow_datasets, tensorboardX
+In this repository we provide the code for tests in the paper:
 
-# install jax
-# note: please check newest version number for jaxlib
-PYTHON_VERSION=cp36  # alternatives: cp36, cp37, cp38
-CUDA_VERSION=cuda100  # alternatives: cuda92, cuda100, cuda101, cuda102
-PLATFORM=linux_x86_64  # alternatives: linux_x86_64
-BASE_URL='https://storage.googleapis.com/jax-releases'
-pip install --upgrade $BASE_URL/$CUDA_VERSION/jaxlib-0.1.42-$PYTHON_VERSION-none-$PLATFORM.whl
-pip install --upgrade jax  # install jax
 
-# install neural_tangents
-pip install neural_tangents
-```
-Our code is written in [Jax](https://github.com/google/jax) and uses the Taylorization functionality from [Neural Tangents](https://github.com/google/neural-tangents). We currently require Tensorflow in addition for some (very light) data processing routines.
 
-## Training neural networks and their Taylorizations
-1. Train a 4-layer CNN with 128 channels per layer, saving the model parameters and test logits.
-```
-python taylorized_train.py \
-    --epochs 200 \
-    --init_seed 100 \
-    --model cnn --gap --n_channels 128 --n_layers 4 \
-    --loss logistic \
-    --parameterization standard \
-    --optimizer momentum --lr 0.1 --momentum 0.0 --weight_decay 0.0 \
-    --lr_decay --decay_epoch 100 --decay_epoch_2 150 --decay_factor 0.1 \
-    --grad_norm_thresh 5 \
-    --batch_size_train 256 \
-    --batch_size_test 256 \
-    --logdir runs/CNNTHIN-lr-0.1-clip-5-bs-256 \
-    --save_steps 200 \
-    --early_save_steps 25 \
-    --early_save_till_step 200 \
-    --save_path saved_models/CNNTHIN-lr-0.1-clip-5-bs-256
-```
+## Table of Contents
 
-2. Train {linearized, quadratic, cubic, quartic} Taylorized versions of the 4-layer CNN from the same initialization (with parallelization over CUDA devices.)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Citation](#citation)
 
-    *Note*: Taylorized training uses the exact same random seeds as full training (for SGD and data augmentation noise.)
-```
-CUDA_VISIBLE_DEVICES=0 python taylorized_train.py  --linearize  --epochs 200  --init_seed 100  --model cnn --gap --n_channels 128 --n_layers 4  --loss logistic  --parameterization standard  --optimizer momentum --lr 0.1 --momentum 0.0 --weight_decay 0.0  --lr_decay --decay_epoch 100 --decay_epoch_2 150 --decay_factor 0.1  --grad_norm_thresh 5  --batch_size_train 256  --batch_size_test 256  --logdir runs/CNNTHIN-LIN-lr-0.1-clip-5-bs-256  --save_steps 200  --early_save_steps 25  --early_save_till_step 200  --load_path saved_models/CNNTHIN-lr-0.1-clip-5-bs-256/0.npy  --save_path saved_models/CNNTHIN-LIN-lr-0.1-clip-5-bs-256 &
-CUDA_VISIBLE_DEVICES=1 python taylorized_train.py  --expand_order 2  --epochs 200  --init_seed 100  --model cnn --gap --n_channels 128 --n_layers 4  --loss logistic  --parameterization standard  --optimizer momentum --lr 0.1 --momentum 0.0 --weight_decay 0.0  --lr_decay --decay_epoch 100 --decay_epoch_2 150 --decay_factor 0.1  --grad_norm_thresh 5  --batch_size_train 256  --batch_size_test 256  --logdir runs/CNNTHIN-QUAD-lr-0.1-clip-5-bs-256  --save_steps 200  --early_save_steps 25  --early_save_till_step 200  --load_path saved_models/CNNTHIN-lr-0.1-clip-5-bs-256/0.npy  --save_path saved_models/CNNTHIN-QUAD-lr-0.1-clip-5-bs-256 &
-CUDA_VISIBLE_DEVICES=2 python taylorized_train.py  --expand_order 3  --epochs 200  --init_seed 100  --model cnn --gap --n_channels 128 --n_layers 4  --loss logistic  --parameterization standard  --optimizer momentum --lr 0.1 --momentum 0.0 --weight_decay 0.0  --lr_decay --decay_epoch 100 --decay_epoch_2 150 --decay_factor 0.1  --grad_norm_thresh 5  --batch_size_train 256  --batch_size_test 256  --logdir runs/CNNTHIN-CUBIC-lr-0.1-clip-5-bs-256  --save_steps 200  --early_save_steps 25  --early_save_till_step 200  --load_path saved_models/CNNTHIN-lr-0.1-clip-5-bs-256/0.npy  --save_path saved_models/CNNTHIN-CUBIC-lr-0.1-clip-5-bs-256 &
-CUDA_VISIBLE_DEVICES=3 python taylorized_train.py  --expand_order 4  --epochs 200  --init_seed 100  --model cnn --gap --n_channels 128 --n_layers 4  --loss logistic  --parameterization standard  --optimizer momentum --lr 0.1 --momentum 0.0 --weight_decay 0.0  --lr_decay --decay_epoch 100 --decay_epoch_2 150 --decay_factor 0.1  --grad_norm_thresh 5  --batch_size_train 256  --batch_size_test 256  --logdir runs/CNNTHIN-QUARTIC-lr-0.1-clip-5-bs-256  --save_steps 200  --early_save_steps 25  --early_save_till_step 200  --load_path saved_models/CNNTHIN-lr-0.1-clip-5-bs-256/0.npy  --save_path saved_models/CNNTHIN-QUARTIC-lr-0.1-clip-5-bs-256
-```
 
-3. Monitor the results on Tensorboard.
-```
-tensorboard --logdir runs
-```
+## Installation
+git clone https://github.com/khencohen/WeakCorrelationsNTK.git
+cd WeakCorrelationsNTK
+pip install -r requirements.txt
 
-Further setups (such as training WideResNets) can be found in the provided shell scripts.
+
+
+## Usage
+python main.py
+
+
+
+## Citation
+
+If you find this work useful in your research, please consider citing:
+
+```bibtex
+@article{yourPaperID,
+  title={Your Paper Title},
+  author={Your Name and Co-Authors},
+  journal={Journal Name or Conference},
+  year={Year},
+  doi={YourDOI}
+}

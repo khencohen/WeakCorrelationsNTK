@@ -20,7 +20,9 @@ In this repository we provide the code for tests in the paper:
 
 ## Installation
 git clone https://github.com/khencohen/WeakCorrelationsNTK.git
+
 cd WeakCorrelationsNTK
+
 pip install -r requirements.txt
 
 

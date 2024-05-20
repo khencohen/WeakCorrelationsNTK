@@ -14,5 +14,7 @@ old/*
 .DS_Store
 *.png
 data/*
+data_bu/*
 results/*
 venv/*
+main_tests.py

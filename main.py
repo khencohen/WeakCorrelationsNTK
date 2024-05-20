@@ -1,32 +1,43 @@
-import pickle
+"""
+File: main.py
+Author: Khen Cohen
+Email: khencohen@mail.tau.ac.il
+Description: This code is a realization of the paper "Weak Correlations as the Underlying Principle for Linearization of Gradient-Based Learning Systems" by Khen Cohen et al.
+
+This program is distributed under the MIT License.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
 import os
-
 import matplotlib.pyplot as plt
+import numpy as np
 from jax import jit
-from jax import grad
 from jax import random
-import jax, jax.numpy as jnp
-
-from jax import jacfwd, jacrev, grad
-from jax import grad, hessian
-
+from jax import grad
 import jax.numpy as jnp
-from jax.nn import log_softmax
 from jax.example_libraries import optimizers
-
 import tensorflow_datasets as tfds
-
 import neural_tangents as nt
 from neural_tangents import stax
-from neural_tangents import taylor_expand
 from tqdm import tqdm
-
 from div_corr_utils import DivCorr
-
-
-# https://github.com/google/neural-tangents/blob/main/notebooks/function_space_linearization.ipynb
-# https://colab.research.google.com/github/google/neural-tangents/blob/master/notebooks/function_space_linearization.ipynb#scrollTo=J-8i_4KD7o5s
-# Using https://github.com/google/neural-tangents/blob/main/notebooks/function_space_linearization.ipynb
 
 
 def process_data(data_chunk, architecture='Dense', twoclass=True):
@@ -158,8 +169,8 @@ def run_ntk_training(dataset_size=64, hidden_size=128,
                      output_size=10, num_layers=3, activation='relu',
                      learning_rate=1e-1, num_of_epochs=1000, architecture='Dense',
                      dataset='MNIST', num_of_corr_calculations=5,
-                     batch_size = 64,
-                     num_params_per_layer=10):
+                     batch_size=64,
+                     num_params_per_layer=10, corr_order=2):
     train, test = get_db(dataset_size=dataset_size,
                          architecture=architecture,
                          dataset=dataset,
@@ -224,8 +235,8 @@ def run_ntk_training(dataset_size=64, hidden_size=128,
     lis_of_df_epochs = []
     lis_of_df_corr12 = []
     lis_of_df_corr13 = []
-    C = lambda x, y: jnp.sqrt(jnp.mean((x - y) ** 2))
-    # C = lambda x, y: jnp.abs(x - y).mean()
+
+    C = lambda x, y: jnp.sqrt(0.5 * jnp.mean((x - y) ** 2))
     for i in loop:
         params = get_params(state)
         state = opt_apply(i, grad_loss(params, X, Y), state)
@@ -236,23 +247,12 @@ def run_ntk_training(dataset_size=64, hidden_size=128,
             train_linear_loss = loss(predictions[i], Y)
             loop.set_description('Exact Loss: {:.4f}, Linear Loss: {:.4f}'.format(train_exact_loss, train_linear_loss))
 
+            # list_of_train_ld.append(loss(train_exact_loss, train_linear_loss))
             list_of_train_ld.append(C(train_exact_loss, train_linear_loss))
             list_of_train_nn_lin_loss.append(train_exact_loss)
             list_of_train_lin_loss.append(train_linear_loss)
 
             ### Test Loss ###
-            # Calculate the output probabilities
-            # test_exact_output = f(params, XT)
-            # test_lin_output = predictions_test[i]
-            # test_exact_prob = jnp.exp(log_softmax(test_exact_output))
-            # test_lin_prob = jnp.exp(log_softmax(test_lin_output))
-            # test_exact_loss = jnp.mean(jnp.sum(test_exact_prob * YT, axis=1))
-            # test_linear_loss = jnp.mean(jnp.sum(test_lin_prob * YT, axis=1))
-            # # quad_loss = loss(lin_plus_quad(X, params), Y)
-            # loop.set_description('Exact Loss: {:.4f}, Linear Loss: {:.4f}'.format(test_exact_loss, test_linear_loss))
-
-
-
             # test_exact_loss = loss(f(params, XT), YT)
             # test_linear_loss = loss(predictions_test[i], YT)
             #
@@ -262,56 +262,18 @@ def run_ntk_training(dataset_size=64, hidden_size=128,
 
             list_of_epochs_ld.append(i)
 
-
         if i % (num_of_epochs // num_of_corr_calculations) == 0 or i == num_of_epochs - 1:
             divcorr = DivCorr(f, params, X, num_params_per_layer=num_params_per_layer)
             dfdidx = divcorr.get_df_didx(dx=1e-3)
             d2fdidx2 = divcorr.get_d2f_didx2(dx=1e-3)
-            df_corr12 = divcorr.get_derivatives_correlation_2order(dfdidx, d2fdidx2)  # * (learning_rate**2)
+            df_corr12 = divcorr.get_derivatives_correlation_2order(dfdidx, d2fdidx2)
             lis_of_df_epochs.append(i)
             lis_of_df_corr12.append(df_corr12)
 
-            # d3fdidx3 = divcorr.get_d3f_didx3(dx=1e-3)
-            # df_corr13 = divcorr.get_derivatives_correlation_3order(dfdidx, d3fdidx3)
-            # lis_of_df_corr13.append(df_corr13)
-
-    # Print the gradient of the network with respect to the weights
-    # first_derivative = grad(lambda params: loss(f(params, X), Y))(params)
-
-    # Calculate the Hessian of the network with respect to the weights
-    # def hessian(f):
-    #     return jacfwd(jacrev(f))
-    # H = hessian(f)(params)
-
-    # def unflatten(flat, tree):
-    #     shapes = [x.shape for x in flat]
-    #     sizes = [x.size for x in flat]
-    #     sizes = jnp.array(sizes)
-    #     idxs = jnp.cumsum(sizes)[:-1]
-    #     parts = [flat[idxs[i]:idxs[i + 1]].reshape(shape) for i, shape in enumerate(shapes)]
-    #     return jax.tree_util.tree_unflatten(jax.tree_util.tree_structure(tree), parts)
-
-    # create_folder('data')
-    # # Save divcorr for later use
-    # with open('data/divcorr.pkl', 'wb') as f:
-    #     pickle.dump(divcorr, f)
-    #
-    # del divcorr
-    # divcorr = DivCorr(None, [],None, num_params_per_layer=6)
-    # # Load divcorr
-    # with open('data/divcorr.pkl', 'rb') as f:
-    #     divcorr = pickle.load(f)
-
-    # d3fdidx3 = divcorr.get_d3f_didx3(dx=1e-1)
-
-    # Calculate correlations:
-
-    # Calculate div f with finite differences
-
-    # H = hessian(lambda params: loss(f(params, X), Y))(params)
-    # # Convert to numpy
-    # first_derivative = flatten(first_derivative)[0]
-    # H = flatten(H)[0]
+            if corr_order == 3:
+                d3fdidx3 = divcorr.get_d3f_didx3(dx=1e-3)
+                df_corr13 = divcorr.get_derivatives_correlation_3order(dfdidx, d3fdidx3)
+                lis_of_df_corr13.append(df_corr13)
 
     return list_of_train_ld, list_of_train_nn_lin_loss, list_of_train_lin_loss, list_of_epochs_ld, \
         list_of_test_ld, list_of_test_nn_lin_loss, list_of_test_lin_loss, \
@@ -319,15 +281,15 @@ def run_ntk_training(dataset_size=64, hidden_size=128,
 
 
 def run_single_experiment(dataset='MNIST'):
-    learning_rate = 1e-3  # Learning rate for the optimizer
-    num_of_epochs = 20000  # Number of epochs to train the network
+    learning_rate = 1e0  # Learning rate for the optimizer
+    num_of_epochs = 1_000  # Number of epochs to train the network
     dataset_size = int(512 / 0.8)  # Number of samples to use from the dataset
     # dataset_size = int(128 / 0.8)  # Number of samples to use from the dataset
     # hidden_size = 32  # Number of neurons in the hidden layer
-    hidden_size = 128  # Number of neurons in the hidden layer
+    hidden_size = 256  # Number of neurons in the hidden layer
     # output_size = 10  # Number of classes
-    output_size = 2  # Number of classes
-    num_layers = 2  # Number of hidden layers
+    output_size = 10  # Number of classes
+    num_layers = 1  # Number of hidden layers
     activation = 'relu'  # Activation function
     architecture = 'Dense'  # Architecture of the network
     num_params_per_layer = 15
@@ -350,7 +312,7 @@ def run_single_experiment(dataset='MNIST'):
         list_of_test_ld, list_of_test_nn_lin_loss, list_of_test_lin_loss, \
         list_of_df_epochs, list_of_df_corr12, list_of_df_corr13 = results
 
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(10, 4))
     plt.subplot(1, 2, 1)
     plt.plot(list_of_epochs_ld, list_of_train_nn_lin_loss, label='Train Exact Loss')
     plt.plot(list_of_epochs_ld, list_of_train_lin_loss, label='Train Linear Loss')
@@ -369,35 +331,27 @@ def run_single_experiment(dataset='MNIST'):
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
+
+    plt.savefig('results/ntk_train_{}_{}_{}_{}_{}_{}.pdf'.format(dataset, hidden_size, num_layers, activation, num_params_per_layer, output_size), dpi=600)
     plt.show()
-
-    # plt.subplot(1, 3, 3)
-    # plt.plot(list_of_df_epochs, list_of_df_corr12, '-o')
-    # plt.title(r'$\rho(\partial_{i} f, \partial_{i} \partial_{j} f)$')
-    # plt.xlabel('Epochs')
-    # plt.ylabel('Correlation')
-    # plt.show()
-
 
 
 def run_width_experiment(list_of_widths, dataset='MNIST',
                          dataset_size=256, num_of_epochs=20000,
                          avg_factor=3, num_layers=3,
-                         num_params_per_layer=10):
-    lr0 = 1e-3  # Learning rate for the optimizer
-    output_size = 2  # Number of classes
-    activation = 'relu'  # Activation function
+                         num_params_per_layer=10, lr0=1e-3,
+                         activation='relu', corr_order=2,
+                         output_size=2):
     architecture = 'Dense'  # Architecture of the network
 
-    # learning_rate_fn = lambda h: lr0 * (128/jnp.sqrt(h))
     learning_rate_fn = lambda h: lr0
 
-    # tot_list_of_test_final_C = []
     tot_list_of_train_final_C = []
     tot_list_of_df_corr12 = []
+    tot_list_of_df_corr13 = []
     for hidden_size in list_of_widths:
-        # avg_ld_test = 0.0
         avg_corr12 = 0.0
+        avg_corr13 = 0.0
         avg_ld_train = 0.0
         for _ in range(avg_factor):
             results = run_ntk_training(
@@ -411,7 +365,8 @@ def run_width_experiment(list_of_widths, dataset='MNIST',
                 architecture=architecture,
                 dataset=dataset,
                 num_of_corr_calculations=1,  # Calculating once in the end
-                num_params_per_layer=num_params_per_layer
+                num_params_per_layer=num_params_per_layer,
+                corr_order=corr_order
             )
 
             list_of_train_ld, list_of_train_nn_lin_loss, list_of_train_lin_loss, list_of_epochs_ld, \
@@ -419,191 +374,94 @@ def run_width_experiment(list_of_widths, dataset='MNIST',
                 list_of_df_epochs, list_of_df_corr12, list_of_df_corr13 = results
 
             avg_ld_train += list_of_train_ld[-1]
-            # avg_ld_test += list_of_test_ld[-1]
             avg_corr12 += list_of_df_corr12[-1]
+            if corr_order == 3:
+                avg_corr13 += list_of_df_corr13[-1]
 
-        # tot_list_of_test_final_C.append(avg_ld_test)
         tot_list_of_train_final_C.append(avg_ld_train)
         tot_list_of_df_corr12.append(avg_corr12)
+        if corr_order == 3:
+            tot_list_of_df_corr13.append(avg_corr13)
 
-    plt.figure(figsize=(12, 6))
-    plt.suptitle('Width Experiment - {}'.format(dataset))
-    plt.subplot(1, 2, 1)
-    # plt.plot(list_of_widths, tot_list_of_test_final_C, label='Test Loss')
-    plt.plot(list_of_widths, tot_list_of_train_final_C, label='Train Loss')
-    plt.title(r'$C(F, F_{lin})$ vs. Width')
+    list_of_widths = np.array(list_of_widths)
+    tot_list_of_train_final_C = np.array(tot_list_of_train_final_C)
+    tot_list_of_df_corr12 = np.array(tot_list_of_df_corr12)
+
+    # Save all data
+    np.save('data/widths_{}_{}_{}_{}.npy'.format(dataset, num_layers, activation, corr_order), list_of_widths)
+    np.save('data/train_final_C_{}_{}_{}_{}.npy'.format(dataset, num_layers, activation, corr_order),
+            tot_list_of_train_final_C)
+    np.save('data/df_corr12_{}_{}_{}_{}.npy'.format(dataset, num_layers, activation, corr_order), tot_list_of_df_corr12)
+
+    if corr_order == 3:
+        tot_list_of_df_corr13 = np.array(tot_list_of_df_corr13)
+        np.save('data/df_corr13_{}_{}_{}_{}.npy'.format(dataset, num_layers, activation, corr_order),
+                tot_list_of_df_corr13)
+
+    return list_of_widths, tot_list_of_train_final_C, tot_list_of_df_corr12, tot_list_of_df_corr13
+
+
+def plot_results(dataset='MNIST', num_layers=3,
+                 activation='relu', corr_order=2):
+    list_of_widths = np.load('data/widths_{}_{}_{}_{}.npy'.format(dataset, num_layers, activation, corr_order))
+    tot_list_of_train_final_C = np.load(
+        'data/train_final_C_{}_{}_{}_{}.npy'.format(dataset, num_layers, activation, corr_order))
+    tot_list_of_df_corr12 = np.load(
+        'data/df_corr12_{}_{}_{}_{}.npy'.format(dataset, num_layers, activation, corr_order))
+
+    plt.plot(list_of_widths, tot_list_of_train_final_C)
+    plt.title(r'$\mathcal{C}^{0,2}(F, F_{lin})$' + \
+              ' vs. Width (dataset={} layers={} activation={})'.format(dataset, num_layers, activation))
     plt.xlabel('Width')
     plt.ylabel('Loss')
-    plt.legend()
+    plt.savefig('results/Cfflin_{}_{}_{}.pdf'.format(dataset, num_layers, activation), dpi=600)
+    plt.show()
 
-    plt.subplot(1, 2, 2)
     plt.plot(list_of_widths, tot_list_of_df_corr12)
-    plt.title(r'$\rho(\partial_{i} f, \partial_{i} \partial_{j} f)$ vs. Width')
+    plt.title(r'$\mathcal{C}^{0,2}$' + ' vs. Width (dataset={} layers={} activation={})'.format(dataset, num_layers,
+                                                                                                activation))
     plt.xlabel('Width')
     plt.ylabel('Correlation')
-
-    plt.savefig('results/width_experiment_{}.png'.format(dataset), dpi=600)
+    plt.savefig('results/corr12_{}_{}_{}.pdf'.format(dataset, num_layers, activation), dpi=600)
     plt.show()
+
+    if corr_order == 3:
+        tot_list_of_df_corr13 = np.load(
+            'data/df_corr13_{}_{}_{}_{}.npy'.format(dataset, num_layers, activation, corr_order))
+
+        plt.plot(list_of_widths, tot_list_of_df_corr13)
+        plt.title(r'$\mathcal{C}^{0,3}$' + ' vs. Width (dataset={} layers={} activation={})'.format(dataset, num_layers,
+                                                                                                    activation))
+        plt.xlabel('Width')
+        plt.ylabel('Correlation')
+        plt.savefig('results/corr13_{}_{}_{}_corr13.pdf'.format(dataset, num_layers, activation), dpi=600)
+        plt.show()
 
     return
 
 
+
 if __name__ == '__main__':
     create_folder('results')
+    create_folder('data')
 
-    # run_single_experiment(dataset='MNIST')
-    # exit()
+    # Run a single simulation
+    run_single_experiment(dataset='CIFAR10')
 
-    for dataset in ['CIFAR10']:  # , 'FashionMNIST', 'MNIST']:
+    # Run the width experiment
+    for dataset in ['MNIST', 'FashionMNIST', 'CIFAR10']:
         run_width_experiment(
-            list_of_widths=[32, 48, 64, 80, 96, 112, 128, 144, 160, 176],
+            list_of_widths=[8, 16, 32, 64, 128, 256, 512, 1024],
             dataset=dataset,
-            dataset_size=int(512 / 0.8),
-            num_of_epochs=5_000,
+            dataset_size=int(128 / 0.8),
+            num_of_epochs=1_000,
             avg_factor=1,
-            num_layers=2,
-            num_params_per_layer=15
+            num_layers=1,
+            num_params_per_layer=10,
+            lr0=1e0,
+            output_size=10,
         )
-
-#
-#
-# def run_activation_experiment(list_of_activations):
-#     learning_rate = 1e0  # Learning rate for the optimizer
-#     num_of_epochs = 3000  # Number of epochs to train the network
-#     dataset_size = 256  # Number of samples to use from the dataset
-#     hidden_size = 128  # Number of neurons in the hidden layer
-#     output_size = 10  # Number of classes
-#     num_layers = 3  # Number of hidden layers
-#     architecture = 'Dense'  # Architecture of the network
-#     dataset = 'MNIST'  # Dataset to use
-#
-#     list_of_final_C = []
-#     for activation in list_of_activations:
-#         results = run_ntk_training(
-#             dataset_size=dataset_size,
-#             hidden_size=hidden_size,
-#             output_size=output_size,
-#             num_layers=num_layers,
-#             activation=activation,
-#             learning_rate=learning_rate,
-#             num_of_epochs=num_of_epochs,
-#             architecture=architecture,
-#             dataset=dataset
-#         )
-#
-#         list_of_ld, list_of_nn_lin_loss, list_of_lin_loss, list_of_epochs_ld = results
-#         list_of_final_C.append(list_of_ld[-1])
-#
-#     plt.figure()
-#     # Show bars
-#     plt.bar(list_of_activations, list_of_final_C)
-#     plt.title(r'$C(F, F_{lin})$ vs. Activation Function')
-#     plt.xlabel('Activation Function')
-#     plt.ylabel('Loss')
-#     plt.show()
-#
-#
-# def run_architecture_experiment(list_of_architectures):
-#     learning_rate = 1e0  # Learning rate for the optimizer
-#     num_of_epochs = 3000  # Number of epochs to train the network
-#     dataset_size = 64  # Number of samples to use from the dataset
-#     output_size = 10  # Number of classes
-#     num_layers = 3  # Number of hidden layers
-#     activation = 'relu'  # Activation function
-#     dataset = 'MNIST'
-#
-#     list_of_final_C = []
-#     for architecture in list_of_architectures:
-#         hidden_size = 128 if architecture == 'Dense' else 32
-#         results = run_ntk_training(
-#             dataset_size=dataset_size,
-#             hidden_size=hidden_size,
-#             output_size=output_size,
-#             num_layers=num_layers,
-#             activation=activation,
-#             learning_rate=learning_rate,
-#             num_of_epochs=num_of_epochs,
-#             architecture=architecture,
-#             dataset=dataset
-#         )
-#
-#         list_of_ld, list_of_nn_lin_loss, list_of_lin_loss, list_of_epochs_ld = results
-#         list_of_final_C.append(list_of_ld[-1])
-#
-#     plt.figure()
-#     # Show bars
-#     plt.bar(list_of_architectures, list_of_final_C)
-#     plt.title(r'$C(F, F_{lin})$ vs. Architecture')
-#     plt.xlabel('Architecture')
-#     plt.ylabel('Loss')
-#     plt.show()
-
-#
-# def run_dataset_experiment(list_of_datasets):
-#     learning_rate = 1e0  # Learning rate for the optimizer
-#     num_of_epochs = 3000  # Number of epochs to train the network
-#     dataset_size = 64  # Number of samples to use from the dataset
-#     hidden_size = 128  # Number of neurons in the hidden layer
-#     output_size = 10  # Number of classes
-#     num_layers = 3  # Number of hidden layers
-#     activation = 'relu'  # Activation function
-#     architecture = 'Dense'  # Architecture of the network
-#
-#     list_of_final_C = []
-#     for dataset in list_of_datasets:
-#         results = run_ntk_training(
-#             dataset_size=dataset_size,
-#             hidden_size=hidden_size,
-#             output_size=output_size,
-#             num_layers=num_layers,
-#             activation=activation,
-#             learning_rate=learning_rate,
-#             num_of_epochs=num_of_epochs,
-#             architecture=architecture,
-#             dataset=dataset
-#         )
-#
-#         list_of_ld, list_of_nn_lin_loss, list_of_lin_loss, list_of_epochs_ld = results
-#         list_of_final_C.append(list_of_ld[-1])
-#
-#     plt.figure()
-#     # Show bars
-#     plt.bar(list_of_datasets, list_of_final_C)
-#     plt.title(r'$C(F, F_{lin})$ vs. Dataset')
-#     plt.xlabel('Dataset')
-#     plt.ylabel('Loss')
-#     plt.show()
-#
-
-
-# def run_nol_experiment(list_of_nol, dataset='MNIST', dataset_size=256):
-#     learning_rate = 1e0  # Learning rate for the optimizer
-#     num_of_epochs = 3000  # Number of epochs to train the network
-#     hidden_size = 128  # Number of neurons in the hidden layer
-#     output_size = 10  # Number of classes
-#     activation = 'relu'  # Activation function
-#     architecture = 'Dense'  # Architecture of the network
-#
-#     list_of_final_C = []
-#     for num_layers in list_of_nol:
-#         results = run_ntk_training(
-#             dataset_size=dataset_size,
-#             hidden_size=hidden_size,
-#             output_size=output_size,
-#             num_layers=num_layers,
-#             activation=activation,
-#             learning_rate=learning_rate,
-#             num_of_epochs=num_of_epochs,
-#             architecture=architecture,
-#             dataset=dataset
-#         )
-#
-#         list_of_ld, list_of_nn_lin_loss, list_of_lin_loss, list_of_epochs_ld = results
-#         list_of_final_C.append(list_of_ld[-1])
-#
-#     plt.figure()
-#     plt.plot(list_of_nol, list_of_final_C)
-#     plt.title(r'$C(F, F_{lin})$ vs. Number of Layers')
-#     plt.xlabel('Number of Layers')
-#     plt.ylabel('Loss')
-#     plt.show()
+        plot_results(dataset=dataset,
+                     num_layers=1,
+                     activation='relu',
+                     corr_order=2)

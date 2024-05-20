@@ -1,8 +1,4 @@
 import numpy as np
-from findiff import FinDiff
-from jax import jit
-from jax import grad
-from jax import random
 import jax, jax.numpy as jnp
 
 
@@ -149,137 +145,32 @@ class DivCorr:
         dfdx_r = dfdx.reshape(d, s, -1).T
         d2fdx2_r = d2fdx2.reshape(d, d, s, -1).T
 
-        # dfdxA indecies (k, i)
-        # dfdxB indecies (k, j)
-        # d2fdx2 indecies (k, i, j)
+        # dfdxA indecies (l, k, i)
+        # dfdxB indecies (l, k, j)
+        # d2fdx2 indecies (l, k, i, j)
         # mean_corr = sum over k (dfdxA[k, i] * dfdxB[k, j] * d2fdx2[k, i, j]) with same k
-        # mean_corr = jnp.einsum('ki,kj,kij->k', dfdx_r, dfdx_r, d2fdx2_r)
         mean_corr = jnp.einsum('lki,lkj,lkij->lk', dfdx_r, dfdx_r, d2fdx2_r)
         mean_corr /= (d ** 2)
         mean_corr = mean_corr.mean(axis=0)
         mean_corr = jnp.sqrt(jnp.mean(mean_corr**2)).item()
-        # mean_corr /= jnp.linalg.norm(dfdx, axis=1) * jnp.linalg.norm(dfdx, axis=1) * (d**2)
-        # mean_corr = jnp.mean(mean_corr).item()
         return mean_corr
 
     def get_derivatives_correlation_3order(self, dfdx, d3fdx3):
         # dfdx shape = (d, S, Output)
         # d3fdx3 shape = (d, d, d, S, Output)
         d = dfdx.shape[0]
-        dfdx = dfdx.reshape(d, -1).T
-        d3fdx3 = d3fdx3.reshape(d, d, d, -1).T
+        s = dfdx.shape[1]
+        dfdx_r = dfdx.reshape(d, s, -1).T
+        d3fdx3_r = d3fdx3.reshape(d, d, d, s, -1).T
 
-        # dfdxA indecies (k, i)
-        # dfdxB indecies (k, j)
-        # dfdxC indecies (k, l)
-        # d3fdx3 indecies (k, i, j, l)
+        # dfdxA indecies (l, k, i)
+        # dfdxB indecies (l, k, j)
+        # dfdxC indecies (l, k, l)
+        # d3fdx3 indecies (l, k, i, j, r)
         # mean_corr = sum over k
         # (dfdxA[k, i] * dfdxB[k, l] * dfdxC[k, l] * d3fdx3[k, i, j, l]) with same k
-        mean_corr = jnp.einsum('ki,kj,kl,kijl->k', dfdx, dfdx, dfdx, d3fdx3)
-        mean_corr /= jnp.linalg.norm(dfdx, axis=1) * \
-                     jnp.linalg.norm(dfdx, axis=1) * \
-                     jnp.linalg.norm(dfdx, axis=1)
-        mean_corr = jnp.mean(mean_corr).item() / (d**3)
+        mean_corr = jnp.einsum('lki,lkj,lkr,lkijr->lk', dfdx_r, dfdx_r, dfdx_r, d3fdx3_r)
+        mean_corr /= (d ** 3)
+        mean_corr = mean_corr.mean(axis=0)
+        mean_corr = jnp.sqrt(jnp.mean(mean_corr**2)).item()
         return mean_corr
-
-#
-# def get_params_plus_dx_in_idx(params, idx, dx=1e-3):
-#     params_plus_dx = []
-#     layer, matbias = idx
-#     for i in range(len(params)):
-#         p2add = []
-#         if len(params[i]) <= 1:
-#             continue
-#
-#         if layer == i:
-#             if len(params[i][0].shape) == 1:
-#                 p2add += [params[i][0] + dx]
-#             else:
-#                 p2add += [params[i][0] + dx]
-#         else:
-#             p2add += [params[i][0]]
-#             p2add += [params[i][1]]
-#
-#         params_plus_dx.append(tuple(p2add))
-#     return params_plus_dx
-#
-# def get_params_plus_dx(params, idx, dx=1e-3):
-#     params_plus_dx = []
-#     layer, matbias = idx
-#     for i in range(len(params)):
-#         p2add = []
-#         if len(params[i]) <= 1:
-#             continue
-#         eps0 = dx * int(i == layer and matbias == 0)
-#         eps1 = dx * int(i == layer and matbias == 1)
-#         p2add += [params[i][0] + eps0]
-#         p2add += [params[i][1] + eps1]
-#         params_plus_dx.append(tuple(p2add))
-#     return params_plus_dx
-#
-# def get_df_didx(f, params, X, idx, dx=1e-3):
-#     params_plus_dx = get_params_plus_dx(params, idx=idx, dx=dx)
-#     params_minus_dx = get_params_plus_dx(params, idx=idx, dx=-dx)
-#     f_plus_dx = f(params_plus_dx, X)
-#     f_minus_dx = f(params_minus_dx, X)
-#     div_f = (f_plus_dx - f_minus_dx) / (2 * dx)
-#     return div_f
-#
-#
-#
-#
-# def get_second_derivative(f, params, X, dx=1e-3):
-#     params_plus_dx = get_params_plus_dx(params, dx=dx)
-#     params_minus_dx = get_params_plus_dx(params, dx=-dx)
-#     f_plus_dx = f(params_plus_dx, X)
-#     f_minus_dx = f(params_minus_dx, X)
-#     second_derivative = (f_plus_dx - 2 * f(params, X) + f_minus_dx) / (dx ** 2)
-#     return second_derivative
-#
-# def get_hessian_matrix(f, params, X, dx=1e-3):
-#
-#     hessian_matrix = []
-#     for i in range(len(params)):
-#         params_plus_dx_in_i = get_params_plus_dx_in_idx(params, idx=(i, 0), dx=dx)
-#         params_minus_dx_in_i = get_params_plus_dx_in_idx(params, idx=(i, 0), dx=-dx)
-#         for j in range(len(params)):
-#             params_plus_dx_in_j = get_params_plus_dx_in_idx(params, idx=(j, 0), dx=dx)
-#             params_minus_dx_in_j = get_params_plus_dx_in_idx(params, idx=(j, 0), dx=-dx)
-#             f_plus_dx = f(params_plus_dx_in_i, X)
-#             f_minus_dx = f(params_minus_dx_in_i, X)
-#             second_derivative = (f_plus_dx - 2 * f(params, X) + f_minus_dx) / (dx ** 2)
-#             hessian_matrix.append(second_derivative)
-#
-#     return hessian_matrix
-#
-# def get_third_derivative(f, params, X, dx=1e-3):
-#     params_plus_dx = get_params_plus_dx(params, dx=dx)
-#     params_minus_dx = get_params_plus_dx(params, dx=-dx)
-#     f_plus_dx = f(params_plus_dx, X)
-#     f_minus_dx = f(params_minus_dx, X)
-#     third_derivative = (f_plus_dx - 3 * f(params, X) + 3 * f_minus_dx - f_minus_dx) / (dx ** 3)
-#     return third_derivative
-#
-# # def get_fourth_derivative(f, params, X, dx=1e-3):
-# #     params_plus_dx = get_params_plus_dx(params, dx=dx)
-# #     params_minus_dx = get_params_plus_dx(params, dx=-dx)
-# #     f_plus_dx = f(params_plus_dx, X)
-# #     f_minus_dx = f(params_minus_dx, X)
-# #     fourth_derivative = (f_plus_dx - 4 * f(params, X) + 6 * f_minus_dx - 4 * f_minus_dx + f_minus_dx) / (dx ** 4)
-# #     return fourth_derivative
-#
-#
-# # params_plus_dx = []
-# # for list
-# #     l, wd, idx = idx_list
-# #
-# # for i in range(len(params)):
-# #     p2add = []
-# #     if len(params[i]) <= 1:
-# #         continue
-# #     eps0 = dx * int(i == layer and matbias == 0)
-# #     eps1 = dx * int(i == layer and matbias == 1)
-# #     p2add += [params[i][0] + eps0]
-# #     p2add += [params[i][1] + eps1]
-# #     params_plus_dx.append(tuple(p2add))
-# # return params_plus_dx
